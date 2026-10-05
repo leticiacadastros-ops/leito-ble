@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Leitor de mensagens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --fundo: #E6EDF3;
+    --papel: #FFFFFF;
+    --tinta: #1B2A41;
+    --apagado: #5B6B80;
+    --linha: #C9D4DF;
+    --sinal: #E89A2C;
+    --ok: #2E8B57;
+    --erro: #B83A3A;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fundo: #101A27;
+      --papel: #182537;
+      --tinta: #E6EDF3;
+      --apagado: #93A3B8;
+      --linha: #2A3B52;
+    }
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--fundo);
+    color: var(--tinta);
+    font-family: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 17px;
+    line-height: 1.45;
+  }
+  main {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 20px 18px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* Barra de conexão */
+  .conexao {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .estado { display: flex; align-items: center; gap: 10px; color: var(--apagado); }
+  .ponto {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--linha);
+    flex-shrink: 0;
+  }
+  .estado[data-estado="conectado"] { color: var(--tinta); }
+  .estado[data-estado="conectado"] .ponto { background: var(--ok); }
+  .estado[data-estado="conectando"] .ponto { background: var(--sinal); }
+  .estado[data-estado="erro"] { color: var(--erro); }
+  .estado[data-estado="erro"] .ponto { background: var(--erro); }
+
+  button {
+    font: inherit;
+    font-weight: 700;
+    border: 0;
+    border-radius: 999px;
+    padding: 12px 20px;
+    cursor: pointer;
+    background: var(--tinta);
+    color: var(--fundo);
+  }
+  button.secundario {
+    background: transparent;
+    color: var(--tinta);
+    border: 2px solid var(--linha);
+    padding: 10px 18px;
+  }
+  button:focus-visible, input:focus-visible {
+    outline: 3px solid var(--sinal);
+    outline-offset: 3px;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+
+  /* Última mensagem: o elemento principal */
+  .palco {
+    background: var(--papel);
+    border-radius: 24px;
+    padding: 28px 24px;
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 18px;
+    border-left: 8px solid var(--linha);
+    transition: border-color .2s;
+  }
+  .palco.falando { border-left-color: var(--sinal); }
+  .mensagem {
+    font-size: clamp(28px, 8vw, 40px);
+    font-weight: 700;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+    margin: 0;
+  }
+  .mensagem.vazia { color: var(--apagado); font-weight: 400; font-size: 22px; }
+  .rodape-palco { display: flex; align-items: center; justify-content: space-between; color: var(--apagado); font-size: 15px; }
+
+  .ondas { display: flex; gap: 4px; align-items: flex-end; height: 22px; }
+  .ondas span {
+    width: 5px; height: 6px; border-radius: 3px;
+    background: var(--sinal);
+    opacity: 0;
+  }
+  .palco.falando .ondas span { opacity: 1; animation: onda .9s ease-in-out infinite; }
+  .ondas span:nth-child(2) { animation-delay: .15s; }
+  .ondas span:nth-child(3) { animation-delay: .3s; }
+  .ondas span:nth-child(4) { animation-delay: .45s; }
+  @keyframes onda { 0%,100% { height: 6px; } 50% { height: 22px; } }
+  @media (prefers-reduced-motion: reduce) {
+    .palco.falando .ondas span { animation: none; height: 14px; }
+  }
+
+  /* Ajustes */
+  .ajustes {
+    display: grid;
+    gap: 14px;
+  }
+  .linha-ajuste { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .linha-ajuste label { flex-shrink: 0; }
+  input[type="range"] { width: 100%; max-width: 240px; accent-color: var(--sinal); }
+  input[type="checkbox"] { width: 24px; height: 24px; accent-color: var(--sinal); }
+
+  /* Histórico */
+  h2 { font-size: 17px; margin: 0 0 8px; color: var(--apagado); font-weight: 400; }
+  ol.historico { list-style: none; margin: 0; padding: 0; }
+  ol.historico li {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--linha);
+    overflow-wrap: anywhere;
+  }
+  ol.historico time { color: var(--apagado); font-size: 14px; flex-shrink: 0; }
+  .aviso {
+    background: var(--papel);
+    border-radius: 16px;
+    padding: 16px 18px;
+    border-left: 6px solid var(--erro);
+  }
+  .aviso[hidden] { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <div class="conexao">
+    <div class="estado" id="estado" data-estado="desconectado" role="status" aria-live="polite">
+      <span class="ponto"></span><span id="estadoTexto">Desconectado</span>
+    </div>
+    <button id="btnConectar">Conectar</button>
+  </div>
+
+  <div class="aviso" id="aviso" hidden></div>
+
+  <section class="palco" id="palco" aria-live="polite">
+    <p class="mensagem vazia" id="mensagem">Toque em Conectar e escolha o módulo Bluetooth.</p>
+    <div class="rodape-palco">
+      <span id="horaMsg">Nenhuma mensagem ainda</span>
+      <div class="ondas" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+    </div>
+  </section>
+
+  <section class="ajustes">
+    <div class="linha-ajuste">
+      <label for="lerVoz">Ler mensagens em voz alta</label>
+      <input type="checkbox" id="lerVoz" checked>
+    </div>
+    <div class="linha-ajuste">
+      <label for="velocidade">Velocidade da voz</label>
+      <input type="range" id="velocidade" min="0.5" max="1.5" step="0.1" value="1">
+    </div>
+    <div class="linha-ajuste">
+      <span></span>
+      <button class="secundario" id="btnTestar">Testar voz</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Mensagens recebidas</h2>
+    <ol class="historico" id="historico"></ol>
+  </section>
+</main>
+
+<script>
+  // UUIDs padrão do HM-10 e clones (AT-09, MLT-BT05)
+  const SERVICO = 0xFFE0;
+  const CARACTERISTICA = 0xFFE1;
+
+  const el = (id) => document.getElementById(id);
+  const estado = el('estado'), estadoTexto = el('estadoTexto');
+  const btnConectar = el('btnConectar'), aviso = el('aviso');
+  const palco = el('palco'), mensagem = el('mensagem'), horaMsg = el('horaMsg');
+  const historico = el('historico');
+
+  let dispositivo = null;
+  let buffer = '';
+  let temporizador = null;
+  const decodificador = new TextDecoder('utf-8');
+
+  // ---------- Voz ----------
+  let vozPt = null;
+  function escolherVoz() {
+    const vozes = speechSynthesis.getVoices();
+    vozPt = vozes.find(v => v.lang === 'pt-BR') ||
+            vozes.find(v => v.lang && v.lang.startsWith('pt')) || null;
+  }
+  if ('speechSynthesis' in window) {
+    escolherVoz();
+    speechSynthesis.onvoiceschanged = escolherVoz;
+  }
+
+  // O iOS só libera o áudio depois de um toque do usuário
+  function liberarAudio() {
+    if (!('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    speechSynthesis.speak(u);
+  }
+
+  function falar(texto) {
+    if (!el('lerVoz').checked || !('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance(texto);
+    u.lang = 'pt-BR';
+    if (vozPt) u.voice = vozPt;
+    u.rate = parseFloat(el('velocidade').value);
+    u.onstart = () => palco.classList.add('falando');
+    u.onend = u.onerror = () => {
+      if (!speechSynthesis.speaking) palco.classList.remove('falando');
+    };
+    speechSynthesis.speak(u);   // mensagens novas entram na fila
+  }
+
+  // ---------- Interface ----------
+  function mostrarEstado(tipo, texto) {
+    estado.dataset.estado = tipo;
+    estadoTexto.textContent = texto;
+  }
+  function mostrarAviso(texto) {
+    aviso.textContent = texto;
+    aviso.hidden = !texto;
+  }
+  function horaAgora() {
+    return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function receberMensagem(texto) {
+    texto = texto.trim();
+    if (!texto) return;
+    const hora = horaAgora();
+
+    mensagem.textContent = texto;
+    mensagem.classList.remove('vazia');
+    horaMsg.textContent = 'Recebida às ' + hora;
+
+    const li = document.createElement('li');
+    const span = document.createElement('span');
+    span.textContent = texto;
+    const t = document.createElement('time');
+    t.textContent = hora;
+    li.append(span, t);
+    historico.prepend(li);
+
+    falar(texto);
+  }
+
+  // ---------- Bluetooth ----------
+  // O Arduino envia em pedaços de 20 bytes e termina com "\n"
+  function aoReceberDados(evento) {
+    buffer += decodificador.decode(evento.target.value, { stream: true });
+
+    let fim;
+    while ((fim = buffer.search(/[\r\n]/)) >= 0) {
+      receberMensagem(buffer.slice(0, fim));
+      buffer = buffer.slice(fim + 1);
+    }
+
+    // Segurança: se faltar o "\n", lê o que chegou após 400 ms sem novos dados
+    clearTimeout(temporizador);
+    if (buffer) {
+      temporizador = setTimeout(() => { receberMensagem(buffer); buffer = ''; }, 400);
+    }
+  }
+
+  // Serviços usados pelo HM-10 e pelos clones mais comuns
+  const SERVICOS_CONHECIDOS = [
+    0xFFE0, 0xFFF0, 0xFFE5,
+    '6e400001-b5a3-f393-e0a9-e50e24dcca9e'   // UART da Nordic
+  ];
+  let etapa = '';
+
+  const esperar = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // O iPhone às vezes falha na primeira tentativa: tenta até 3 vezes
+  async function conectarGatt() {
+    let ultimoErro;
+    for (let tentativa = 1; tentativa <= 3; tentativa++) {
+      try {
+        mostrarEstado('conectando', 'Conectando... (tentativa ' + tentativa + ' de 3)');
+        return await dispositivo.gatt.connect();
+      } catch (e) {
+        ultimoErro = e;
+        await esperar(1000);
+      }
+    }
+    throw ultimoErro;
+  }
+
+  // Procura a característica que envia dados (notify), seja qual for o clone
+  async function acharCaracteristica(servidor) {
+    try {
+      const servico = await servidor.getPrimaryService(SERVICO);
+      return await servico.getCharacteristic(CARACTERISTICA);
+    } catch (e) { /* não é um HM-10 padrão: procura nas outras */ }
+
+    const servicos = await servidor.getPrimaryServices();
+    for (const servico of servicos) {
+      const caracs = await servico.getCharacteristics();
+      for (const c of caracs) {
+        if (c.properties.notify || c.properties.indicate) return c;
+      }
+    }
+    throw new Error('o módulo não tem nenhuma característica que envie dados');
+  }
+
+  async function ligarNotificacoes() {
+    etapa = 'conectar ao módulo';
+    const servidor = await conectarGatt();
+
+    etapa = 'encontrar o canal de dados';
+    const carac = await acharCaracteristica(servidor);
+
+    etapa = 'ativar o recebimento de mensagens';
+    await carac.startNotifications();
+    carac.addEventListener('characteristicvaluechanged', aoReceberDados);
+
+    etapa = '';
+    mostrarEstado('conectado', 'Conectado a ' + (dispositivo.name || 'módulo BLE'));
+    btnConectar.textContent = 'Desconectar';
+    if (mensagem.classList.contains('vazia')) {
+      mensagem.textContent = 'Aguardando mensagens...';
+    }
+  }
+
+  async function conectar() {
+    mostrarAviso('');
+    liberarAudio();
+
+    if (!navigator.bluetooth) {
+      mostrarEstado('erro', 'Bluetooth indisponível');
+      mostrarAviso('Este navegador não acessa o Bluetooth. No iPhone, abra esta página no app Bluefy.');
+      return;
+    }
+
+    etapa = '';
+    try {
+      dispositivo = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: SERVICOS_CONHECIDOS
+      });
+      dispositivo.addEventListener('gattserverdisconnected', aoDesconectar);
+      await ligarNotificacoes();
+    } catch (erro) {
+      if (erro.name === 'NotFoundError' && !etapa) {
+        mostrarEstado('desconectado', 'Desconectado');   // usuário cancelou a lista
+      } else {
+        mostrarEstado('erro', 'Falha na conexão');
+        mostrarAviso('Falhou na etapa: ' + (etapa || 'escolher o dispositivo') +
+          '. Erro: ' + erro.name + ' - ' + erro.message +
+          '. Confira se o LED do módulo está piscando (sem outro app conectado) e tente de novo.');
+        try { if (dispositivo && dispositivo.gatt.connected) dispositivo.gatt.disconnect(); } catch (e) {}
+      }
+    }
+  }
+
+  function aoDesconectar() {
+    mostrarEstado('desconectado', 'Desconectado');
+    btnConectar.textContent = 'Reconectar';
+  }
+
+  btnConectar.addEventListener('click', async () => {
+    if (dispositivo && dispositivo.gatt.connected) {
+      dispositivo.gatt.disconnect();
+      return;
+    }
+    if (dispositivo && btnConectar.textContent === 'Reconectar') {
+      liberarAudio();
+      try { await ligarNotificacoes(); return; }
+      catch (e) { /* se falhar, abre a lista de dispositivos de novo */ }
+    }
+    conectar();
+  });
+
+  el('btnTestar').addEventListener('click', () => {
+    liberarAudio();
+    falar('Teste de voz. As mensagens do Arduino serão lidas assim.');
+  });
+</script>
+</body>
+</html>
