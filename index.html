@@ -297,13 +297,59 @@
     }
   }
 
+  // Serviços usados pelo HM-10 e pelos clones mais comuns
+  const SERVICOS_CONHECIDOS = [
+    0xFFE0, 0xFFF0, 0xFFE5,
+    '6e400001-b5a3-f393-e0a9-e50e24dcca9e'   // UART da Nordic
+  ];
+  let etapa = '';
+
+  const esperar = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // O iPhone às vezes falha na primeira tentativa: tenta até 3 vezes
+  async function conectarGatt() {
+    let ultimoErro;
+    for (let tentativa = 1; tentativa <= 3; tentativa++) {
+      try {
+        mostrarEstado('conectando', 'Conectando... (tentativa ' + tentativa + ' de 3)');
+        return await dispositivo.gatt.connect();
+      } catch (e) {
+        ultimoErro = e;
+        await esperar(1000);
+      }
+    }
+    throw ultimoErro;
+  }
+
+  // Procura a característica que envia dados (notify), seja qual for o clone
+  async function acharCaracteristica(servidor) {
+    try {
+      const servico = await servidor.getPrimaryService(SERVICO);
+      return await servico.getCharacteristic(CARACTERISTICA);
+    } catch (e) { /* não é um HM-10 padrão: procura nas outras */ }
+
+    const servicos = await servidor.getPrimaryServices();
+    for (const servico of servicos) {
+      const caracs = await servico.getCharacteristics();
+      for (const c of caracs) {
+        if (c.properties.notify || c.properties.indicate) return c;
+      }
+    }
+    throw new Error('o módulo não tem nenhuma característica que envie dados');
+  }
+
   async function ligarNotificacoes() {
-    mostrarEstado('conectando', 'Conectando...');
-    const servidor = await dispositivo.gatt.connect();
-    const servico = await servidor.getPrimaryService(SERVICO);
-    const carac = await servico.getCharacteristic(CARACTERISTICA);
+    etapa = 'conectar ao módulo';
+    const servidor = await conectarGatt();
+
+    etapa = 'encontrar o canal de dados';
+    const carac = await acharCaracteristica(servidor);
+
+    etapa = 'ativar o recebimento de mensagens';
     await carac.startNotifications();
     carac.addEventListener('characteristicvaluechanged', aoReceberDados);
+
+    etapa = '';
     mostrarEstado('conectado', 'Conectado a ' + (dispositivo.name || 'módulo BLE'));
     btnConectar.textContent = 'Desconectar';
     if (mensagem.classList.contains('vazia')) {
@@ -321,20 +367,23 @@
       return;
     }
 
+    etapa = '';
     try {
       dispositivo = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
-        optionalServices: [SERVICO]
+        optionalServices: SERVICOS_CONHECIDOS
       });
       dispositivo.addEventListener('gattserverdisconnected', aoDesconectar);
       await ligarNotificacoes();
     } catch (erro) {
-      if (erro.name === 'NotFoundError') {
-        mostrarEstado('desconectado', 'Desconectado');   // usuário cancelou
+      if (erro.name === 'NotFoundError' && !etapa) {
+        mostrarEstado('desconectado', 'Desconectado');   // usuário cancelou a lista
       } else {
         mostrarEstado('erro', 'Falha na conexão');
-        mostrarAviso('Não foi possível conectar: ' + erro.message +
-          '. Confira se o módulo está ligado e se não está conectado a outro app, como o LightBlue.');
+        mostrarAviso('Falhou na etapa: ' + (etapa || 'escolher o dispositivo') +
+          '. Erro: ' + erro.name + ' - ' + erro.message +
+          '. Confira se o LED do módulo está piscando (sem outro app conectado) e tente de novo.');
+        try { if (dispositivo && dispositivo.gatt.connected) dispositivo.gatt.disconnect(); } catch (e) {}
       }
     }
   }
